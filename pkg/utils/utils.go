@@ -56,6 +56,11 @@ func DiscoverSriovDevices() ([]sriovnetworkv1.InterfaceExt, error) {
 		return nil, fmt.Errorf("DiscoverSriovDevices(): could not retrieve PCI devices")
 	}
 
+	net, err := ghw.Network()
+	if err != nil {
+		return nil, fmt.Errorf("DiscoverSriovDevices(): could not retrieve network devices: %v", err)
+	}
+
 	for _, device := range devices {
 		devClass, err := strconv.ParseInt(device.Class.ID, 16, 64)
 		if err != nil {
@@ -78,6 +83,13 @@ func DiscoverSriovDevices() ([]sriovnetworkv1.InterfaceExt, error) {
 			glog.Warningf("DiscoverSriovDevices(): unable to parse device driver for device %+v %q", device, err)
 			continue
 		}
+
+		deviceNames, err := dputils.GetNetNames(device.Address)
+		if err != nil {
+			glog.Warningf("DiscoverSriovDevices(): unable to get device names for device %+v %q", device, err)
+			continue
+		}
+
 		iface := sriovnetworkv1.InterfaceExt{
 			PciAddress: device.Address,
 			Driver:     driver,
@@ -112,7 +124,16 @@ func DiscoverSriovDevices() ([]sriovnetworkv1.InterfaceExt, error) {
 				}
 			}
 		}
-		pfList = append(pfList, iface)
+
+		for _, devName := range deviceNames {
+			for _, nic := range net.NICs {
+				if devName == nic.Name {
+					glog.V(2).Infof("DiscoverSriovDevices() adding device %s, pci address %s\n", nic.Name, device.Address)
+					pfList = append(pfList, iface)
+					break
+				}
+			}
+		}
 	}
 
 	return pfList, nil
